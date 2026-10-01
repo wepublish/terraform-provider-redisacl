@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.0] - 2026-10-01
+
+### Added
+- Dragonfly support, detected automatically from `INFO server`; tested against Dragonfly v2.0.0
+- `password_wo` / `password_wo_version` on `redisacl_user`: a write-only password that is never
+  stored in state (Terraform 1.11+); changing the version rotates it with an in-place update
+- Password drift detection for `password_wo`: the provider keeps the password's SHA-256 in private
+  state and compares it with the server's hashes, so an extra, replaced or `nopass` password set
+  outside Terraform shows up as a plan change (`password_wo_version = "changed outside Terraform"`)
+- `delete_keys_on_destroy` on `redisacl_user`: key patterns deleted (SCAN + UNLINK in batches) right
+  after the user is deleted, e.g. a tenant's own prefixes; patterns must start with a fixed prefix
+- Provider argument `acl_save` to run `ACL SAVE` after every create, update and delete, so users
+  survive a restart of servers that use an aclfile
+- `database` on `redisacl_user` (Dragonfly only): restricts the user to one logical database with
+  the `$<n>` rule, read back from `ACL LIST` so changes outside Terraform show up in the plan
+- `REDIS_ADDRESS`, `REDIS_USERNAME`, `REDIS_PASSWORD` and `REDIS_USE_TLS` environment variables,
+  which were documented but not read
+
+### Changed
+- The provider is now published as `wepublish/redisacl` (previously `B3ns44d/redisacl`). Change the
+  `source` in `required_providers` and migrate existing state with
+  `terraform state replace-provider registry.terraform.io/B3ns44d/redisacl registry.terraform.io/wepublish/redisacl`
+- `REDIS_URL` is now only a fallback: an `address`, `cluster` or `sentinel` in the provider
+  configuration takes precedence (previously the environment variable overrode the configuration)
+
+### Fixed
+- Dragonfly rejected every `ACL SETUSER` because of the `reset` rule; the provider now sends
+  `resetpass resetkeys resetchannels -@all` there
+- Permanent plan diff on Dragonfly, which reports channels as `resetchannels &pattern`
+- Self-mutation protection did not work on Dragonfly, which answers `ACL WHOAMI` with `User is <name>`
+- `redisacl_user` and `redisacl_users` data sources failed on Dragonfly (flat `ACL GETUSER`
+  reply without a `selectors` field)
+- Selectors on Dragonfly now fail with a clear error instead of being sent to the server
+
 ## [1.0.2] - 2025-11-07
 
 ### Fixed

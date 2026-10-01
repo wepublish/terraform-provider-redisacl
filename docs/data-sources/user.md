@@ -18,8 +18,8 @@ Gets information about a Redis ACL user.
 terraform {
   required_providers {
     redisacl = {
-      source  = "B3ns44d/redisacl"
-      version = "1.0.1"
+      source  = "wepublish/redisacl"
+      version = "~> 1.1"
     }
   }
 }

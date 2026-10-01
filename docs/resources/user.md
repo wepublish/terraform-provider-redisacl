@@ -18,8 +18,8 @@ Manages a Redis ACL user.
 terraform {
   required_providers {
     redisacl = {
-      source  = "B3ns44d/redisacl"
-      version = "1.0.1"
+      source  = "wepublish/redisacl"
+      version = "~> 1.1"
     }
   }
 }
@@ -150,11 +150,17 @@ output "created_users" {
 
 ### Optional
 
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
 - `allow_self_mutation` (Boolean) Whether to allow the user to modify itself.
 - `channels` (String) The channel patterns the user has access to (space-separated if multiple).
 - `commands` (String) The commands the user can execute (space-separated).
+- `database` (Number) Dragonfly only: restrict the user to this logical database (the `$<n>` rule). Unset allows all databases.
+- `delete_keys_on_destroy` (List of String) Key patterns (Redis glob syntax) to delete when the user is destroyed, e.g. the user's own prefixes. Each pattern must start with a fixed prefix. Keys are deleted in `database` (default 0), after the user, so no new keys can be written in between.
 - `enabled` (Boolean) Whether the user is enabled.
 - `keys` (String) The key patterns the user has access to (space-separated if multiple).
+- `password_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Write-only password for the user. Never stored in state; requires Terraform 1.11 or later. Change `password_wo_version` to set a new one.
+- `password_wo_version` (String) Any value; changing it re-applies `password_wo`, e.g. to rotate the password.
 - `passwords` (List of String, Sensitive) A list of passwords for the user.
 - `selectors` (List of String) A list of selectors for the user (each a string of space-separated rules).
 

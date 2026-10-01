@@ -1,8 +1,8 @@
 # Terraform Redis ACL Provider Makefile
 # Version and build configuration
-VERSION ?= 1.0.2
+VERSION ?= 1.1.0
 BINARY_NAME = terraform-provider-redisacl
-PACKAGE = github.com/B3ns44d/terraform-provider-redisacl
+PACKAGE = github.com/wepublish/terraform-provider-redisacl
 
 # Build configuration
 OS ?= $(shell go env GOOS)

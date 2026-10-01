@@ -17,8 +17,8 @@ The Redis ACL provider allows Terraform to manage Redis Access Control Lists (AC
 terraform {
   required_providers {
     redisacl = {
-      source  = "B3ns44d/redisacl"
-      version = "1.0.1"
+      source  = "wepublish/redisacl"
+      version = "~> 1.1"
     }
   }
 }
@@ -208,6 +208,7 @@ provider "redisacl" {
 
 ### Optional
 
+- `acl_save` (Boolean) Run `ACL SAVE` after every change, so users survive a restart of a server that uses an aclfile. Defaults to `false`.
 - `address` (String) The address of the Redis server.
 - `cluster` (Attributes) Configuration for Redis Cluster. (see [below for nested schema](#nestedatt--cluster))
 - `password` (String, Sensitive) The password for Redis authentication.
@@ -247,14 +248,79 @@ Optional:
 
 ## Environment Variables
 
-The following environment variables can be used as defaults:
+The following environment variables are used when the matching argument is not
+set in the provider configuration:
 
 - `REDIS_ADDRESS` - Redis server address
 - `REDIS_USERNAME` - Redis username
 - `REDIS_PASSWORD` - Redis password
 - `REDIS_USE_TLS` - Enable TLS (true/false)
+- `REDIS_URL` - Full connection URL, used only when neither `address`, `cluster`
+  nor `sentinel` is configured
+
+## Dragonfly
+
+[Dragonfly](https://www.dragonflydb.io/) is detected automatically. Its ACL
+dialect differs from Redis in a few places, which the provider handles:
+
+- `reset` is not supported, so the provider sends its parts
+  (`resetpass resetkeys resetchannels -@all`) instead.
+- ACL selectors are not supported; setting `selectors` is an error.
+- `database` restricts a user to one logical database (`$<n>`); it is rejected on Redis.
+- `+@all -@dangerous` alone is not enough isolation between tenants on Dragonfly: `CLIENT PAUSE`/`KILL`,
+  the `DFLY` admin commands (category `@admin`), `SCRIPT FLUSH` and key-name listing via `SCAN`/`RANDOMKEY`
+  stay allowed. The example below shows a rule that closes these.
+- Set `acl_save = true` when the server runs with `--aclfile`, otherwise users
+  created at runtime are lost on restart.
+
+```terraform
+# One shared Dragonfly for several tenants: each tenant gets a user that may
+# only touch keys and channels starting with its own name.
+
+terraform {
+  required_providers {
+    redisacl = {
+      source = "wepublish/redisacl"
+    }
+  }
+}
+
+# The admin password comes from REDIS_PASSWORD.
+provider "redisacl" {
+  address     = "dragonfly.example.com:6379"
+  use_tls     = true
+  tls_ca_cert = file(var.ca_cert_path)
+  acl_save    = true
+}
+
+variable "ca_cert_path" {
+  type = string
+}
+
+variable "tenant_password" {
+  type      = string
+  sensitive = true
+  ephemeral = true
+}
+
+resource "redisacl_user" "tenant" {
+  name = "tenant-a"
+
+  # Never stored in state; bump the version to rotate the password in place.
+  password_wo         = var.tenant_password
+  password_wo_version = "1"
+
+  keys     = "~tenant-a:* ~{tenant-a}:*"
+  channels = "&tenant-a:*"
+  commands = "+@all -@dangerous -@admin +info -client -script -function -memory -pubsub -scan -randomkey -dbsize"
+  database = 0
+
+  # Delete the tenant's data together with its user.
+  delete_keys_on_destroy = ["tenant-a:*", "{tenant-a}:*"]
+}
+```
 
 ## Requirements
 
-- Redis 6.0 or later (ACL support required)
-- Terraform 1.0 or later
+- Redis 6.0 or later (ACL support required), or Dragonfly (tested with v2.0.0)
+- Terraform 1.0 or later; `password_wo` needs Terraform 1.11 or later

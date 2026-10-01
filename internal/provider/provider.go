@@ -9,6 +9,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -24,6 +26,10 @@ import (
 type RedisClient struct {
 	client redis.UniversalClient
 	mutex  *sync.Mutex
+	// dragonfly is set when the server reports a dragonfly_version.
+	dragonfly bool
+	// aclSave runs ACL SAVE after every change.
+	aclSave bool
 }
 
 // Ensure RedisACLProvider satisfies various provider interfaces.
@@ -47,6 +53,7 @@ type RedisACLProviderModel struct {
 	TLSCert               types.String `tfsdk:"tls_cert"`
 	TLSKey                types.String `tfsdk:"tls_key"`
 	TLSInsecureSkipVerify types.Bool   `tfsdk:"tls_insecure_skip_verify"`
+	ACLSave               types.Bool   `tfsdk:"acl_save"`
 	Sentinel              types.Object `tfsdk:"sentinel"`
 	Cluster               types.Object `tfsdk:"cluster"`
 }
@@ -108,6 +115,10 @@ func (p *RedisACLProvider) Schema(_ context.Context, _ provider.SchemaRequest, r
 				MarkdownDescription: "Disable TLS certificate verification (insecure, use only for testing).",
 				Optional:            true,
 			},
+			"acl_save": schema.BoolAttribute{
+				MarkdownDescription: "Run `ACL SAVE` after every change, so users survive a restart of a server that uses an aclfile. Defaults to `false`.",
+				Optional:            true,
+			},
 			"sentinel": schema.SingleNestedAttribute{
 				MarkdownDescription: "Configuration for Redis Sentinel.",
 				Optional:            true,
@@ -162,6 +173,8 @@ func (p *RedisACLProvider) Configure(ctx context.Context, req provider.Configure
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	applyEnvironmentDefaults(&data)
+
 	var tlsConfig *tls.Config
 	if data.UseTLS.ValueBool() {
 		tlsConfig = &tls.Config{
@@ -188,9 +201,11 @@ func (p *RedisACLProvider) Configure(ctx context.Context, req provider.Configure
 		}
 	}
 	var client redis.UniversalClient
-	// Override with REDIS_URL environment variable if set
+	// REDIS_URL is only a fallback: an address, cluster or sentinel in the
+	// provider configuration always wins.
 	redisURL := os.Getenv("REDIS_URL")
-	if redisURL != "" {
+	configured := !data.Address.IsNull() || !data.Cluster.IsNull() || !data.Sentinel.IsNull()
+	if redisURL != "" && !configured {
 		opts, err := redis.ParseURL(redisURL)
 		if err != nil {
 			resp.Diagnostics.AddError("Client Configuration", fmt.Sprintf("Invalid Redis URL: %s", err))
@@ -259,9 +274,17 @@ func (p *RedisACLProvider) Configure(ctx context.Context, req provider.Configure
 		resp.Diagnostics.AddError("Client Configuration", fmt.Sprintf("Unable to connect to Redis: %s", err))
 		return
 	}
+	info, err := client.Info(ctx, "server").Result()
+	if err != nil {
+		resp.Diagnostics.AddError("Client Configuration", fmt.Sprintf("Unable to read server info: %s", err))
+		return
+	}
+
 	redisClient := &RedisClient{
-		client: client,
-		mutex:  &sync.Mutex{},
+		client:    client,
+		mutex:     &sync.Mutex{},
+		dragonfly: strings.Contains(info, "dragonfly_version:"),
+		aclSave:   data.ACLSave.ValueBool(),
 	}
 	resp.DataSourceData = redisClient
 	resp.ResourceData = redisClient
@@ -284,6 +307,31 @@ func New(version string) func() provider.Provider {
 	return func() provider.Provider {
 		return &RedisACLProvider{
 			version: version,
+		}
+	}
+}
+
+// applyEnvironmentDefaults fills unset provider settings from REDIS_ADDRESS,
+// REDIS_USERNAME, REDIS_PASSWORD and REDIS_USE_TLS. Explicit configuration wins.
+func applyEnvironmentDefaults(data *RedisACLProviderModel) {
+	if data.Address.IsNull() && data.Cluster.IsNull() && data.Sentinel.IsNull() {
+		if v := os.Getenv("REDIS_ADDRESS"); v != "" {
+			data.Address = types.StringValue(v)
+		}
+	}
+	if data.Username.IsNull() {
+		if v := os.Getenv("REDIS_USERNAME"); v != "" {
+			data.Username = types.StringValue(v)
+		}
+	}
+	if data.Password.IsNull() {
+		if v := os.Getenv("REDIS_PASSWORD"); v != "" {
+			data.Password = types.StringValue(v)
+		}
+	}
+	if data.UseTLS.IsNull() {
+		if v, err := strconv.ParseBool(os.Getenv("REDIS_USE_TLS")); err == nil {
+			data.UseTLS = types.BoolValue(v)
 		}
 	}
 }

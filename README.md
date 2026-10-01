@@ -1,6 +1,6 @@
 # Terraform Provider for Redis ACL
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/B3ns44d/terraform-provider-redisacl)](https://goreportcard.com/report/github.com/B3ns44d/terraform-provider-redisacl)
+[![Go Report Card](https://goreportcard.com/badge/github.com/wepublish/terraform-provider-redisacl)](https://goreportcard.com/report/github.com/wepublish/terraform-provider-redisacl)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 
 A comprehensive [Terraform](https://www.terraform.io/) provider for managing Redis Access Control Lists (ACLs). This provider supports standalone, Sentinel, and Cluster Redis deployments with full TLS support.
@@ -24,8 +24,8 @@ A comprehensive [Terraform](https://www.terraform.io/) provider for managing Red
 terraform {
   required_providers {
     redisacl = {
-      source  = "B3ns44d/redisacl"
-      version = "~> 0.1.0"
+      source  = "wepublish/redisacl"
+      version = "~> 1.1"
     }
   }
 }
@@ -35,7 +35,7 @@ terraform {
 
 ```bash
 # Clone the repository
-git clone https://github.com/B3ns44d/terraform-provider-redisacl.git
+git clone https://github.com/wepublish/terraform-provider-redisacl.git
 cd terraform-provider-redisacl
 
 # Build and install locally
@@ -249,7 +249,7 @@ output "enabled_users" {
 
 ```bash
 # Clone the repository
-git clone https://github.com/B3ns44d/terraform-provider-redisacl.git
+git clone https://github.com/wepublish/terraform-provider-redisacl.git
 cd terraform-provider-redisacl
 
 # Install dependencies
@@ -409,9 +409,9 @@ This project is licensed under the Mozilla Public License 2.0 - see the [LICENSE
 ## Support
 
 - **Documentation**: Check the [examples](./examples/) directory
-- **Bug Reports**: [Open an issue](https://github.com/B3ns44d/terraform-provider-redisacl/issues)
-- **Feature Requests**: [Start a discussion](https://github.com/B3ns44d/terraform-provider-redisacl/discussions)
-- **Questions**: Use [GitHub Discussions](https://github.com/B3ns44d/terraform-provider-redisacl/discussions)
+- **Bug Reports**: [Open an issue](https://github.com/wepublish/terraform-provider-redisacl/issues)
+- **Feature Requests**: [Open a feature request](https://github.com/wepublish/terraform-provider-redisacl/issues/new/choose)
+- **Questions**: [Open an issue](https://github.com/wepublish/terraform-provider-redisacl/issues)
 
 ## Acknowledgments
 

@@ -39,6 +39,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
       - name: Determine version
         id: version
         run: |
@@ -99,6 +104,11 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v6
         id: import_gpg
@@ -152,7 +162,7 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --snapshot --skip-publish --clean
+          args: release --snapshot --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
@@ -234,6 +244,13 @@ jobs:
             echo "Missing ${EXPECTED_CHECKSUM}.sig file in release assets"
             exit 1
           fi
+
+          # Check for registry manifest (declares plugin protocol 6.0)
+          EXPECTED_MANIFEST="terraform-provider-redisacl_${VERSION#v}_manifest.json"
+          if ! echo "$RELEASE_DATA" | jq -r '.assets[].name' | grep -q "$EXPECTED_MANIFEST"; then
+            echo "Missing $EXPECTED_MANIFEST file in release assets"
+            exit 1
+          fi
           
           echo "All required release assets are present for Terraform Registry"
 
@@ -252,19 +269,19 @@ jobs:
             });
             
             const installationSection = '\n\n## 📦 Installation\n\n' +
-              'This provider is available on the [Terraform Registry](https://registry.terraform.io/providers/B3ns44d/redisacl/' + versionNoV + ').\n\n' +
+              'This provider is available on the [Terraform Registry](https://registry.terraform.io/providers/wepublish/redisacl/' + versionNoV + ').\n\n' +
               '```hcl\n' +
               'terraform {\n' +
               '  required_providers {\n' +
               '    redisacl = {\n' +
-              '      source  = "B3ns44d/redisacl"\n' +
+              '      source  = "wepublish/redisacl"\n' +
               '      version = "~> ' + versionNoV + '"\n' +
               '    }\n' +
               '  }\n' +
               '}\n' +
               '```\n\n' +
               '## 📚 Documentation\n\n' +
-              '- [Provider Documentation](https://registry.terraform.io/providers/B3ns44d/redisacl/' + versionNoV + '/docs)\n' +
+              '- [Provider Documentation](https://registry.terraform.io/providers/wepublish/redisacl/' + versionNoV + '/docs)\n' +
               '- [GitHub Repository](https://github.com/${{ github.repository }})\n\n' +
               '---\n\n' +
               '**Note:** The Terraform Registry will automatically detect this release and make it available within a few minutes.';

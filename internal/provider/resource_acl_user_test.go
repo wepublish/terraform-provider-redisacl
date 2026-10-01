@@ -12,6 +12,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/redis/go-redis/v9"
 )
 
 func TestMain(m *testing.M) {
@@ -23,12 +24,21 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// Start Dragonfly container
+	if err := StartDragonflyContainer(ctx); err != nil {
+		fmt.Printf("Failed to start Dragonfly container: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Run tests
 	code := m.Run()
 
 	// Cleanup
 	if err := StopRedisContainer(ctx); err != nil {
 		fmt.Printf("Failed to stop Redis container: %v\n", err)
+	}
+	if err := StopDragonflyContainer(ctx); err != nil {
+		fmt.Printf("Failed to stop Dragonfly container: %v\n", err)
 	}
 
 	os.Exit(code)
@@ -765,4 +775,59 @@ resource "redisacl_user" "test" {
   commands = "+@all"
 }
 `, name, channels)
+}
+
+func TestAccACLUserResource_DeletesKeysOnDestroy(t *testing.T) {
+	ctx := context.Background()
+	keyCount := func(pattern string) int {
+		client := redis.NewClient(&redis.Options{Addr: redisHost + ":" + redisPort, Password: "testpass"})
+		defer func() { _ = client.Close() }()
+		count := 0
+		iter := client.Scan(ctx, 0, pattern, 1000).Iterator()
+		for iter.Next(ctx) {
+			count++
+		}
+		return count
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy: func(*terraform.State) error {
+			if got := keyCount("testtenant:*"); got != 0 {
+				return fmt.Errorf("expected tenant keys to be deleted, %d left", got)
+			}
+			if got := keyCount("othertenant:*"); got != 1 {
+				return fmt.Errorf("expected the other tenant's key to stay, found %d", got)
+			}
+			return nil
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: `
+provider "redisacl" {}
+
+resource "redisacl_user" "test" {
+  name                   = "testtenant"
+  enabled                = true
+  passwords              = ["pw"]
+  keys                   = "~testtenant:*"
+  channels               = "&testtenant:*"
+  commands               = "+@all"
+  delete_keys_on_destroy = ["testtenant:*"]
+}
+`,
+				Check: func(*terraform.State) error {
+					client := redis.NewClient(&redis.Options{Addr: redisHost + ":" + redisPort, Password: "testpass"})
+					defer func() { _ = client.Close() }()
+					for i := 0; i < 1500; i++ {
+						if err := client.Set(ctx, fmt.Sprintf("testtenant:%d", i), "v", 0).Err(); err != nil {
+							return err
+						}
+					}
+					return client.Set(ctx, "othertenant:keep", "v", 0).Err()
+				},
+			},
+		},
+	})
 }

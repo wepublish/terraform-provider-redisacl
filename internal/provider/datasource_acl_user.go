@@ -119,20 +119,23 @@ func (d *ACLUserDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	resultMap, ok := result.(map[interface{}]interface{})
-	if !ok {
+	// Redis 7 with RESP3 answers with a map, Dragonfly with a flat list.
+	var val []interface{}
+	switch res := result.(type) {
+	case []interface{}:
+		val = res
+	case map[interface{}]interface{}:
+		for k, v := range res {
+			val = append(val, k, v)
+		}
+	default:
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to parse ACL GETUSER response: unexpected type %T", result))
 		return
 	}
 
-	if len(resultMap) == 0 {
+	if len(val) == 0 {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("ACL user %s not found", data.Name.ValueString()))
 		return
-	}
-
-	var val []interface{}
-	for k, v := range resultMap {
-		val = append(val, k, v)
 	}
 
 	temp := &ACLUserResourceModel{}

@@ -79,14 +79,34 @@ provider "redisacl" {
 
 ## Environment Variables
 
-The following environment variables can be used as defaults:
+The following environment variables are used when the matching argument is not
+set in the provider configuration:
 
 - `REDIS_ADDRESS` - Redis server address
 - `REDIS_USERNAME` - Redis username
 - `REDIS_PASSWORD` - Redis password
 - `REDIS_USE_TLS` - Enable TLS (true/false)
+- `REDIS_URL` - Full connection URL, used only when neither `address`, `cluster`
+  nor `sentinel` is configured
+
+## Dragonfly
+
+[Dragonfly](https://www.dragonflydb.io/) is detected automatically. Its ACL
+dialect differs from Redis in a few places, which the provider handles:
+
+- `reset` is not supported, so the provider sends its parts
+  (`resetpass resetkeys resetchannels -@all`) instead.
+- ACL selectors are not supported; setting `selectors` is an error.
+- `database` restricts a user to one logical database (`$<n>`); it is rejected on Redis.
+- `+@all -@dangerous` alone is not enough isolation between tenants on Dragonfly: `CLIENT PAUSE`/`KILL`,
+  the `DFLY` admin commands (category `@admin`), `SCRIPT FLUSH` and key-name listing via `SCAN`/`RANDOMKEY`
+  stay allowed. The example below shows a rule that closes these.
+- Set `acl_save = true` when the server runs with `--aclfile`, otherwise users
+  created at runtime are lost on restart.
+
+{{ tffile "examples/dragonfly/main.tf" }}
 
 ## Requirements
 
-- Redis 6.0 or later (ACL support required)
-- Terraform 1.0 or later
+- Redis 6.0 or later (ACL support required), or Dragonfly (tested with v2.0.0)
+- Terraform 1.0 or later; `password_wo` needs Terraform 1.11 or later

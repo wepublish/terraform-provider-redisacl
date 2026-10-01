@@ -72,7 +72,8 @@ jobs:
       fail-fast: false
       matrix:
         go-version: ['1.23', '1.24']
-        terraform-version: ['1.4.*', '1.5.*', '1.6.*']
+        # 1.13 also runs the write-only password tests, which need Terraform 1.11+.
+        terraform-version: ['1.4.*', '1.5.*', '1.6.*', '1.13.*']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
