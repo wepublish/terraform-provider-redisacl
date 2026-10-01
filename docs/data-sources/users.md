@@ -7,21 +7,22 @@ description: |-
 
 # redisacl_users (Data Source)
 
-Gets information about all Redis ACL users.
+Gets information about all Redis ACL users. Useful for audits, e.g. to find users that were
+created by hand and are not part of your configuration. Passwords are never
+returned.
 
 ## Example Usage
 
 ```terraform
-# Get all Redis ACL users
 data "redisacl_users" "all" {}
 
-# Output user information
-output "user_count" {
-  value = length(data.redisacl_users.all.users)
+locals {
+  managed_users = ["default", "billing-app", "reporting", "tenant-a"]
 }
 
-output "user_names" {
-  value = [for user in data.redisacl_users.all.users : user.name]
+# Users that exist on the server but are not part of this configuration.
+output "unmanaged_users" {
+  value = setsubtract([for user in data.redisacl_users.all.users : user.name], local.managed_users)
 }
 ```
 

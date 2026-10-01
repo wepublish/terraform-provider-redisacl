@@ -7,10 +7,12 @@ description: |-
 
 # {{.Name}} ({{.Type}})
 
-{{ .Description | trimspace }}
+{{ .Description | trimspace }} Use it for users that Terraform does not manage,
+e.g. to check how they are configured or to use their rules elsewhere.
+Passwords are never returned.
 
 ## Example Usage
 
-{{ tffile "examples/basic-usage/main.tf" }}
+{{ tffile "examples/data-sources/redisacl_user/data-source.tf" }}
 
 {{ .SchemaMarkdown | trimspace }}

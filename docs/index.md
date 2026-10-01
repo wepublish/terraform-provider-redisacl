@@ -6,14 +6,46 @@ description: |-
 
 # redisacl Provider
 
-The Redis ACL provider allows Terraform to manage Redis Access Control Lists (ACLs). This provider supports Redis 6.0+ ACL features including user management, permissions, and access controls.
+The Redis ACL provider manages the users of a Redis or Dragonfly server: who may
+log in, with which password, and which keys, channels and commands they may use.
+You describe the users in Terraform, and the provider creates, changes and deletes
+them with Redis's `ACL` commands.
+
+## Why use this provider
+
+Without it, ACL users are usually created by hand with `redis-cli`, server by
+server, and nobody knows for sure who may do what. With this provider:
+
+- **Access rules are code.** Every user is defined in your Terraform
+  configuration. Changes go through pull requests, and the history shows who
+  changed what and why.
+- **Manual changes show up.** `terraform plan` reports when someone changed a
+  user's keys, channels, commands or `enabled` flag on the server, and
+  `terraform apply` sets them back. With `password_wo`, a password changed on
+  the server is reported too.
+- **Passwords stay out of the state.** With `password_wo` (Terraform 1.11+), a
+  password is sent to Redis but never stored in the plan or the state. To
+  rotate it, you change one version number.
+- **Least privilege is the easy path.** `commands` is always an allow-list: the
+  provider puts `-@all` in front of it. Each application gets only its own key
+  prefixes and channels.
+- **One configuration for every setup.** Standalone servers, Sentinel and
+  Cluster work the same way, with TLS and mutual TLS. That covers Redis 6.0 and
+  later and Dragonfly, which is detected automatically.
+- **Built-in guard rails.** The provider refuses to change or delete the user
+  it is logged in as, so you can't lock Terraform out. `acl_save` writes every
+  change to the server's ACL file so users survive a restart.
+  `delete_keys_on_destroy` removes a tenant's data together with its user, and
+  rejects patterns that would match every key.
+- **Existing users can be adopted.** Import the users you already have, or read
+  them with the `redisacl_user` and `redisacl_users` data sources.
+
+New to the provider? Start with the
+[Getting started guide](https://registry.terraform.io/providers/wepublish/redisacl/latest/docs/guides/getting-started).
 
 ## Example Usage
 
 ```terraform
-# Basic Redis ACL User Management Example
-# This example demonstrates basic user creation and management
-
 terraform {
   required_providers {
     redisacl = {
@@ -23,185 +55,86 @@ terraform {
   }
 }
 
-# Configure the provider for local Redis
+# Terraform logs in as an admin user; its credentials come from the
+# REDIS_USERNAME and REDIS_PASSWORD environment variables.
 provider "redisacl" {
-  address  = "localhost:6379"
-  username = "redis"               # Change this to your Redis username
-  password = "your-redis-password" # Change this to your Redis password
-}
-
-# Create a read-only user for applications
-resource "redisacl_user" "readonly_app" {
-  name      = "readonly-app"
-  enabled   = true
-  passwords = ["app-readonly-password"]
-
-  # Allow access to application keys only
-  keys = "~app:* ~cache:*"
-
-  # Allow all pub/sub channels
-  channels = "&*"
-
-  # Only allow read operations
-  commands = "+@read -@write -@dangerous"
-}
-
-# Create a write user for data ingestion
-resource "redisacl_user" "write_app" {
-  name      = "write-app"
-  enabled   = true
-  passwords = ["app-write-password"]
-
-  # Allow access to specific key patterns
-  keys = "~data:* ~temp:*"
-
-  # Allow specific pub/sub channels
-  channels = "&notifications:* &events:*"
-
-  # Allow read and write, but not dangerous operations
-  commands = "+@read +@write -@dangerous"
-}
-
-# Create an admin user with full access
-resource "redisacl_user" "admin" {
-  name      = "admin-user"
-  enabled   = true
-  passwords = ["secure-admin-password"]
-
-  # Full access to all keys and channels
-  keys     = "~*"
-  channels = "&*"
-  commands = "+@all"
-
-  # Allow self-modification (needed for admin operations)
-  allow_self_mutation = true
-}
-
-# Create a monitoring user with limited access
-resource "redisacl_user" "monitoring" {
-  name      = "monitoring-user"
-  enabled   = true
-  passwords = ["monitoring-password"]
-
-  # No key access needed for monitoring
-  keys = "~"
-
-  # No pub/sub access needed
-  channels = "&"
-
-  # Only allow monitoring and info commands
-  commands = "+ping +info +client +config|get +memory +latency +slowlog"
-}
-
-# Data source to read the default user
-data "redisacl_user" "default" {
-  name = "default"
-}
-
-# Data source to list all users
-data "redisacl_users" "all" {}
-
-# Outputs
-output "default_user_info" {
-  description = "Information about the default Redis user"
-  value = {
-    enabled  = data.redisacl_user.default.enabled
-    keys     = data.redisacl_user.default.keys
-    commands = data.redisacl_user.default.commands
-  }
-}
-
-output "all_users" {
-  description = "List of all Redis ACL users"
-  value = [for user in data.redisacl_users.all.users : {
-    name    = user.name
-    enabled = user.enabled
-  }]
-}
-
-output "created_users" {
-  description = "Information about created users"
-  value = {
-    readonly_app = {
-      name = redisacl_user.readonly_app.name
-      keys = redisacl_user.readonly_app.keys
-    }
-    write_app = {
-      name = redisacl_user.write_app.name
-      keys = redisacl_user.write_app.keys
-    }
-    admin = {
-      name = redisacl_user.admin.name
-    }
-    monitoring = {
-      name = redisacl_user.monitoring.name
-    }
-  }
+  address = "redis.example.com:6379"
+  use_tls = true
 }
 ```
 
-## Authentication
+Terraform must log in as a user that may run `ACL` commands, such as an admin
+user. Keep its credentials out of your code with the `REDIS_USERNAME` and
+`REDIS_PASSWORD` environment variables.
 
-The provider supports multiple authentication methods:
+## Connecting to your server
 
-### Basic Authentication
+### Standalone server
+
 ```terraform
 provider "redisacl" {
   address  = "localhost:6379"
   username = "admin"
-  password = "password"
+  password = var.redis_admin_password
 }
 ```
 
-### TLS Configuration
+### TLS and mutual TLS
+
 ```terraform
 provider "redisacl" {
   address  = "redis.example.com:6380"
   use_tls  = true
   username = "admin"
-  password = "password"
-  
-  # Optional: Custom CA certificate
+  password = var.redis_admin_password
+
+  # Optional: CA certificate, if the server's certificate isn't signed by a
+  # publicly trusted CA
   tls_ca_cert = file("ca.pem")
-  
-  # Optional: Client certificate for mutual TLS
+
+  # Optional: client certificate and key for mutual TLS
   tls_cert = file("client.pem")
   tls_key  = file("client-key.pem")
 }
 ```
 
 ### Redis Cluster
+
 ```terraform
 provider "redisacl" {
-  cluster {
+  cluster = {
     addresses = [
       "node1.redis.example.com:6379",
       "node2.redis.example.com:6379",
-      "node3.redis.example.com:6379"
+      "node3.redis.example.com:6379",
     ]
     username = "admin"
-    password = "password"
+    password = var.redis_admin_password
   }
 }
 ```
 
 ### Redis Sentinel
+
 ```terraform
 provider "redisacl" {
-  sentinel {
+  sentinel = {
     addresses = [
       "sentinel1.redis.example.com:26379",
       "sentinel2.redis.example.com:26379",
-      "sentinel3.redis.example.com:26379"
+      "sentinel3.redis.example.com:26379",
     ]
     master_name = "mymaster"
     username    = "admin"
-    password    = "password"
+    password    = var.redis_admin_password
   }
 }
 ```
 
-> **⚠️ Important:** Redis does not automatically replicate ACL users to replica nodes. In Sentinel setups, when a failover occurs, the newly promoted master will not have the ACL users created by this provider. Consider using Redis Cluster or implementing ACL synchronization mechanisms for high-availability scenarios.
+~> **Important:** Redis does not replicate ACL users to replicas. After a
+Sentinel failover, the new master does not have the users this provider
+created. Run `terraform apply` against the new master, or use Redis Cluster or
+another way to keep ACLs in sync.
 
 <!-- schema generated by tfplugindocs -->
 ## Schema
@@ -319,6 +252,15 @@ resource "redisacl_user" "tenant" {
   delete_keys_on_destroy = ["tenant-a:*", "{tenant-a}:*"]
 }
 ```
+
+## Guides
+
+- [Getting started](https://registry.terraform.io/providers/wepublish/redisacl/latest/docs/guides/getting-started):
+  your first user, checking it with `redis-cli`, importing existing users
+- [Managing passwords](https://registry.terraform.io/providers/wepublish/redisacl/latest/docs/guides/managing-passwords):
+  `password_wo` versus `passwords`, rotation, changes made on the server
+- [Migrating from B3ns44d/redisacl](https://registry.terraform.io/providers/wepublish/redisacl/latest/docs/guides/migrating-from-b3ns44d):
+  switching existing configurations and state to `wepublish/redisacl`
 
 ## Requirements
 

@@ -124,7 +124,7 @@ provider "redisacl" {
 # High availability with Sentinel
 provider "redisacl" {
   password = var.redis_password
-  sentinel {
+  sentinel = {
     master_name = "mymaster"
     addresses   = ["sentinel1:26379", "sentinel2:26379"]
   }

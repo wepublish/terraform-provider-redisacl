@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-01
+
+### Added
+- Guides on the Terraform Registry: getting started, managing passwords, and migrating from
+  `B3ns44d/redisacl`
+- Documentation of how `redisacl_user` arguments map to ACL rules, including the full-access
+  defaults when `keys`, `channels` or `commands` are left out, and focused examples per page
+
+### Fixed
+- Documentation and examples configured `cluster` and `sentinel` as blocks (`cluster { ... }`),
+  which Terraform rejects; they are attributes (`cluster = { ... }`)
+
 ## [1.1.0] - 2026-10-01
 
 ### Added

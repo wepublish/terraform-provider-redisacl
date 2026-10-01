@@ -3,16 +3,19 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/wepublish/terraform-provider-redisacl)](https://goreportcard.com/report/github.com/wepublish/terraform-provider-redisacl)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 
-A comprehensive [Terraform](https://www.terraform.io/) provider for managing Redis Access Control Lists (ACLs). This provider supports standalone, Sentinel, and Cluster Redis deployments with full TLS support.
+A [Terraform](https://www.terraform.io/) provider for managing the ACL users of Redis and Dragonfly: who may log in, with which password, and which keys, channels and commands they may use. It supports standalone, Sentinel and Cluster deployments with TLS and mutual TLS.
 
-## Features
+**Documentation:** [registry.terraform.io/providers/wepublish/redisacl](https://registry.terraform.io/providers/wepublish/redisacl/latest/docs), including a [Getting started guide](https://registry.terraform.io/providers/wepublish/redisacl/latest/docs/guides/getting-started).
 
-- **Complete ACL Management**: Create, read, update, and delete Redis ACL users
-- **Multiple Deployment Types**: Supports Standalone, Sentinel, and Cluster Redis
-- **Security First**: Full TLS and mutual TLS (mTLS) support
-- **Data Sources**: Read individual users or list all users
-- **Comprehensive Testing**: 14+ test cases with testcontainers-go integration
-- **Production Ready**: Built with Terraform Plugin Framework v1.15+
+## Why use this provider
+
+- **Access rules are code**: every ACL user is defined in Terraform, reviewed in pull requests and tracked in version history, instead of being set by hand with `redis-cli`
+- **Manual changes show up**: `terraform plan` reports users changed on the server, and `terraform apply` sets them back
+- **Passwords stay out of the state**: with `password_wo` (Terraform 1.11+), passwords are never stored in the plan or the state, and rotating one means changing one version number
+- **Least privilege is the easy path**: `commands` is always an allow-list, and each application gets only its own key prefixes and channels
+- **One configuration for every setup**: standalone, Sentinel and Cluster, TLS and mTLS, Redis 6.0+ and Dragonfly (detected automatically)
+- **Built-in guard rails**: Terraform can't lock itself out by changing its own user, `acl_save` persists users across restarts, and `delete_keys_on_destroy` cleans up a tenant's data together with its user
+- **Existing users can be adopted**: import them, or read them with data sources
 
 ## Quick Start
 
@@ -120,7 +123,7 @@ provider "redisacl" {
   username = "default"
   password = "master-password"
   
-  sentinel {
+  sentinel = {
     master_name = "mymaster"
     addresses   = [
       "sentinel1.example.com:26379",
@@ -142,7 +145,7 @@ provider "redisacl" {
   username = "cluster-user"
   password = "cluster-password"
   
-  cluster {
+  cluster = {
     addresses = [
       "node1.example.com:6379",
       "node2.example.com:6379",

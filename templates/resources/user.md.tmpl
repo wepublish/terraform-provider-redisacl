@@ -7,21 +7,67 @@ description: |-
 
 # {{.Name}} ({{.Type}})
 
-{{ .Description | trimspace }}
+{{ .Description | trimspace }} One resource is one user on the server, with its
+passwords and the keys, channels and commands it may use.
 
 ## Example Usage
 
-{{ tffile "examples/basic-usage/main.tf" }}
+{{ tffile "examples/resources/redisacl_user/resource.tf" }}
+
+## How the rules are applied
+
+On every create and update, the provider replaces the user's complete rule set
+with `ACL SETUSER <name> reset ...`. Anything changed on the server outside
+Terraform is overwritten by the next apply.
+
+| Argument    | When set                                                        | When not set                                                         |
+|-------------|-----------------------------------------------------------------|----------------------------------------------------------------------|
+| `enabled`   | `on` or `off`                                                   | `on`                                                                 |
+| `keys`      | Only these key patterns, e.g. `~app:*` or `%R~reports:*`        | **All keys** (`~*`)                                                  |
+| `channels`  | Only these channel patterns, e.g. `&app:*`; `""` for none       | **All channels** (`&*`)                                              |
+| `commands`  | `-@all`, followed by your rules: an allow-list                  | **All commands** (`+@all`)                                           |
+| `passwords` | Exactly these passwords; `[]` means **no password is needed**   | No password: nobody can log in as the user (unless `password_wo` is set) |
+
+!> **Set `keys`, `channels` and `commands` on every application user.** If you
+leave them out, the user gets full access to the server.
+
+Pattern and command syntax is the same as in
+[`ACL SETUSER`](https://redis.io/docs/latest/commands/acl-setuser/). Separate
+several rules with spaces, e.g. `keys = "~app:* ~cache:*"`.
+
+### Passwords
+
+Use either `password_wo` or `passwords`, not both. `password_wo` is never
+stored in the state, and changes made on the server are detected. It is applied
+on every create and update of the user, so its value must be the same on every
+run. See the
+[Managing passwords guide](https://registry.terraform.io/providers/wepublish/redisacl/latest/docs/guides/managing-passwords)
+for rotation and the trade-offs.
+
+### Renaming and destroying
+
+Changing `name` replaces the user: the old user is deleted and a new one is
+created. When `delete_keys_on_destroy` is set, the keys matching its patterns
+are deleted too, so a rename also deletes that data.
+
+The provider refuses to change or delete the user it is logged in as, so
+Terraform can't lock itself out. Set `allow_self_mutation = true` on that user
+if you really want to manage it.
 
 {{ .SchemaMarkdown | trimspace }}
 
 ## Import
 
-Import is supported using the following syntax:
+Existing users are imported by their name. With Terraform 1.5 or later, use an
+`import` block:
 
-```shell
-# Redis ACL users can be imported using their username
-terraform import redisacl_user.example username
-```
+{{ tffile "examples/resources/redisacl_user/import-by-string-id.tf" }}
 
-**Note:** When importing a Redis ACL user, the `passwords` field will be empty in the Terraform state for security reasons. You'll need to set the passwords in your configuration after import.
+Or use the `terraform import` command:
+
+{{ codefile "shell" "examples/resources/redisacl_user/import.sh" }}
+
+Redis does not reveal passwords, so an imported user has none in the state. The
+first `terraform apply` after the import sets the password from your
+configuration. Use the password your applications already use, or update them
+at the same time.

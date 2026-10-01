@@ -104,7 +104,7 @@ provider "redisacl" {
   password = "master-password"
   use_tls  = true
   
-  sentinel {
+  sentinel = {
     master_name = "mymaster"
     addresses   = [
       "sentinel1.example.com:26380",
@@ -124,7 +124,7 @@ provider "redisacl" {
   password = "cluster-password"
   use_tls  = true
   
-  cluster {
+  cluster = {
     addresses = [
       "node1.example.com:6380",
       "node2.example.com:6380",

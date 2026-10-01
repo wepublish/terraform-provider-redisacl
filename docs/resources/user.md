@@ -7,139 +7,93 @@ description: |-
 
 # redisacl_user (Resource)
 
-Manages a Redis ACL user.
+Manages a Redis ACL user. One resource is one user on the server, with its
+passwords and the keys, channels and commands it may use.
 
 ## Example Usage
 
 ```terraform
-# Basic Redis ACL User Management Example
-# This example demonstrates basic user creation and management
+# An application that may read and write its own keys. The password is sent
+# to Redis but never written to the Terraform state (Terraform 1.11+).
+resource "redisacl_user" "billing" {
+  name    = "billing-app"
+  enabled = true
 
-terraform {
-  required_providers {
-    redisacl = {
-      source  = "wepublish/redisacl"
-      version = "~> 1.1"
-    }
-  }
-}
+  password_wo         = var.billing_app_password
+  password_wo_version = "1" # change to apply a new password
 
-# Configure the provider for local Redis
-provider "redisacl" {
-  address  = "localhost:6379"
-  username = "redis"               # Change this to your Redis username
-  password = "your-redis-password" # Change this to your Redis password
-}
-
-# Create a read-only user for applications
-resource "redisacl_user" "readonly_app" {
-  name      = "readonly-app"
-  enabled   = true
-  passwords = ["app-readonly-password"]
-
-  # Allow access to application keys only
-  keys = "~app:* ~cache:*"
-
-  # Allow all pub/sub channels
-  channels = "&*"
-
-  # Only allow read operations
-  commands = "+@read -@write -@dangerous"
-}
-
-# Create a write user for data ingestion
-resource "redisacl_user" "write_app" {
-  name      = "write-app"
-  enabled   = true
-  passwords = ["app-write-password"]
-
-  # Allow access to specific key patterns
-  keys = "~data:* ~temp:*"
-
-  # Allow specific pub/sub channels
-  channels = "&notifications:* &events:*"
-
-  # Allow read and write, but not dangerous operations
+  keys     = "~billing:*"
+  channels = "&billing:*"
   commands = "+@read +@write -@dangerous"
 }
 
-# Create an admin user with full access
-resource "redisacl_user" "admin" {
-  name      = "admin-user"
+# A read-only user. Values in `passwords` are stored in the state; listing
+# two of them lets you rotate without downtime.
+resource "redisacl_user" "reporting" {
+  name      = "reporting"
   enabled   = true
-  passwords = ["secure-admin-password"]
+  passwords = [var.reporting_password, var.reporting_password_next]
 
-  # Full access to all keys and channels
-  keys     = "~*"
-  channels = "&*"
-  commands = "+@all"
-
-  # Allow self-modification (needed for admin operations)
-  allow_self_mutation = true
+  keys     = "~billing:* ~stats:*"
+  channels = ""
+  commands = "+@read -@dangerous"
 }
 
-# Create a monitoring user with limited access
-resource "redisacl_user" "monitoring" {
-  name      = "monitoring-user"
-  enabled   = true
-  passwords = ["monitoring-password"]
+# A tenant on a shared server. Destroying the user also deletes its keys.
+resource "redisacl_user" "tenant_a" {
+  name    = "tenant-a"
+  enabled = true
 
-  # No key access needed for monitoring
-  keys = "~"
+  password_wo         = var.tenant_a_password
+  password_wo_version = "1"
 
-  # No pub/sub access needed
-  channels = "&"
+  keys     = "~tenant-a:*"
+  channels = "&tenant-a:*"
+  commands = "+@all -@dangerous -@admin"
 
-  # Only allow monitoring and info commands
-  commands = "+ping +info +client +config|get +memory +latency +slowlog"
-}
-
-# Data source to read the default user
-data "redisacl_user" "default" {
-  name = "default"
-}
-
-# Data source to list all users
-data "redisacl_users" "all" {}
-
-# Outputs
-output "default_user_info" {
-  description = "Information about the default Redis user"
-  value = {
-    enabled  = data.redisacl_user.default.enabled
-    keys     = data.redisacl_user.default.keys
-    commands = data.redisacl_user.default.commands
-  }
-}
-
-output "all_users" {
-  description = "List of all Redis ACL users"
-  value = [for user in data.redisacl_users.all.users : {
-    name    = user.name
-    enabled = user.enabled
-  }]
-}
-
-output "created_users" {
-  description = "Information about created users"
-  value = {
-    readonly_app = {
-      name = redisacl_user.readonly_app.name
-      keys = redisacl_user.readonly_app.keys
-    }
-    write_app = {
-      name = redisacl_user.write_app.name
-      keys = redisacl_user.write_app.keys
-    }
-    admin = {
-      name = redisacl_user.admin.name
-    }
-    monitoring = {
-      name = redisacl_user.monitoring.name
-    }
-  }
+  delete_keys_on_destroy = ["tenant-a:*"]
 }
 ```
+
+## How the rules are applied
+
+On every create and update, the provider replaces the user's complete rule set
+with `ACL SETUSER <name> reset ...`. Anything changed on the server outside
+Terraform is overwritten by the next apply.
+
+| Argument    | When set                                                        | When not set                                                         |
+|-------------|-----------------------------------------------------------------|----------------------------------------------------------------------|
+| `enabled`   | `on` or `off`                                                   | `on`                                                                 |
+| `keys`      | Only these key patterns, e.g. `~app:*` or `%R~reports:*`        | **All keys** (`~*`)                                                  |
+| `channels`  | Only these channel patterns, e.g. `&app:*`; `""` for none       | **All channels** (`&*`)                                              |
+| `commands`  | `-@all`, followed by your rules: an allow-list                  | **All commands** (`+@all`)                                           |
+| `passwords` | Exactly these passwords; `[]` means **no password is needed**   | No password: nobody can log in as the user (unless `password_wo` is set) |
+
+!> **Set `keys`, `channels` and `commands` on every application user.** If you
+leave them out, the user gets full access to the server.
+
+Pattern and command syntax is the same as in
+[`ACL SETUSER`](https://redis.io/docs/latest/commands/acl-setuser/). Separate
+several rules with spaces, e.g. `keys = "~app:* ~cache:*"`.
+
+### Passwords
+
+Use either `password_wo` or `passwords`, not both. `password_wo` is never
+stored in the state, and changes made on the server are detected. It is applied
+on every create and update of the user, so its value must be the same on every
+run. See the
+[Managing passwords guide](https://registry.terraform.io/providers/wepublish/redisacl/latest/docs/guides/managing-passwords)
+for rotation and the trade-offs.
+
+### Renaming and destroying
+
+Changing `name` replaces the user: the old user is deleted and a new one is
+created. When `delete_keys_on_destroy` is set, the keys matching its patterns
+are deleted too, so a rename also deletes that data.
+
+The provider refuses to change or delete the user it is logged in as, so
+Terraform can't lock itself out. Set `allow_self_mutation = true` on that user
+if you really want to manage it.
 
 <!-- schema generated by tfplugindocs -->
 ## Schema
@@ -170,11 +124,25 @@ output "created_users" {
 
 ## Import
 
-Import is supported using the following syntax:
+Existing users are imported by their name. With Terraform 1.5 or later, use an
+`import` block:
 
-```shell
-# Redis ACL users can be imported using their username
-terraform import redisacl_user.example username
+```terraform
+# Terraform 1.5+: import with a block and review the result in the plan.
+import {
+  to = redisacl_user.billing
+  id = "billing-app"
+}
 ```
 
-**Note:** When importing a Redis ACL user, the `passwords` field will be empty in the Terraform state for security reasons. You'll need to set the passwords in your configuration after import.
+Or use the `terraform import` command:
+
+```shell
+# An ACL user is imported by its name.
+terraform import redisacl_user.billing billing-app
+```
+
+Redis does not reveal passwords, so an imported user has none in the state. The
+first `terraform apply` after the import sets the password from your
+configuration. Use the password your applications already use, or update them
+at the same time.
